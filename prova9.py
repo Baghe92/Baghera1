@@ -12,8 +12,6 @@ Original file is located at
 
 
 import librosa
-
-
 import librosa.display
 
 import numpy as np
