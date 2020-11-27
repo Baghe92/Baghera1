@@ -12,6 +12,7 @@ Original file is located at
 
 
 import librosa
+
 import librosa.display
 
 import numpy as np
@@ -46,6 +47,8 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import Input
 from tensorflow.keras import layers
 from tensorflow.keras import models
+from tensorflow.keras.layers import Add
+from tensorflow.keras.layers import Concatenate
 
 
 
@@ -53,10 +56,11 @@ from tensorflow.keras import models
 from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, BatchNormalization, MaxPooling2D,GlobalAveragePooling2D,Input
 from tensorflow.keras.layers import AveragePooling2D
 from tensorflow.keras.layers import LeakyReLU
+from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import optimizers
 from tensorflow.keras.optimizers import Adam
 
-from tensorflow.python.keras.applications.resnet import ResNet50
+#from tensorflow.python.keras.applications.resnet import ResNet50
 from tensorflow.python.keras.models import Sequential
 from tensorflow.python.keras.layers import Dense
 
@@ -71,6 +75,7 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.utils import shuffle
 
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
 from sklearn.metrics import accuracy_score
 from sklearn.neural_network import MLPClassifier
 
@@ -214,8 +219,16 @@ yy = to_categorical(lb.fit_transform(y))
 print('y_train',yy.shape)
 
 
-x_train, x_test, y_train, y_test = train_test_split(x, yy, test_size=0.20, random_state = 42)
+kf = KFold(n_splits = 10 , random_state = None, shuffle =False)
 
+kf.get_n_splits(x)
+
+print(kf)
+
+for train_index, test_index in kf.split(x):
+	print("TRAIN:", train_index, "TEST:", test_index)
+	x_train, x_test = x[train_index], x[test_index]     
+	y_train, y_test = yy[train_index],yy[test_index]
 
 
 print('x_train', x_train.shape)
@@ -223,12 +236,15 @@ print('x_test' , x_test.shape)
 print('y_train', y_train.shape)
 print('y_test' , y_test.shape)
 
+'''
 x_train[0].flatten()
 
 x_traincnn =np.expand_dims(x_train, axis=2)
 x_testcnn= np.expand_dims(x_test, axis=2)
 
 print('x_traincnn',x_traincnn.shape)
+
+'''
 
 num_rows     = 257
 num_columns  = 251
@@ -237,7 +253,7 @@ num_channels = 1
 
 
 leaky_relu_alpha = 0.1
-filter_size = 2
+#filter_size = 2
 
 x_train = x_train.reshape(x_train.shape[0],num_rows,num_columns,num_channels)
 x_test  = x_test.reshape(x_test.shape[0],num_rows,num_columns,num_channels)
@@ -247,40 +263,59 @@ print('new_train',x_train.shape)
 
 num_labels = yy.shape[1]
 
-# Construct model 
-model = Sequential()
+def make_dilated_network(num_rows, num_columns, num_channels):
+    input_data = Input(shape=(num_rows, num_columns, num_channels))
+    x = Conv2D(filters=256, kernel_size=1)(input_data)
+    x = Conv2D(filters=256, kernel_size=5, padding = 'same')(x)
+    x = MaxPooling2D(pool_size=2)(x)
+    x = BatchNormalization()(x)
+    x = LeakyReLU()(x)
+
+    x_1 = Conv2D(filters=512, kernel_size=3, padding = 'same')(x)
+    x_1 = MaxPooling2D(pool_size=2)(x_1)
+    x_1 = BatchNormalization()(x_1)
+    x_2 = Conv2D(filters=512, kernel_size=3, padding="same", dilation_rate=2)(x)
+    x_2 = MaxPooling2D(pool_size=2)(x_2)
+    x_2 = BatchNormalization()(x_2)
+    x = LeakyReLU()(x)
+    x = Add()([x_1, x_2])
+
+    x_1 = Conv2D(filters=256, kernel_size=3, padding = 'same')(x)
+    x_1 = MaxPooling2D(pool_size=2)(x_1)
+    x_1 = BatchNormalization()(x_1)
+    x_2 = Conv2D(filters=256, kernel_size=3, padding="same", dilation_rate=2)(x)
+    x_2 = MaxPooling2D(pool_size=2)(x_2)
+    x_2 = BatchNormalization()(x_2)
+    x = LeakyReLU()(x)
+    x = Add()([x_1, x_2])
+
+    x_1 = Conv2D(filters=128, kernel_size=3, padding = 'same')(x)
+    x_1 = MaxPooling2D(pool_size=2)(x_1)
+    x_1 = BatchNormalization()(x_1)
+    x_2 = Conv2D(filters=128, kernel_size=3, padding="same", dilation_rate=2)(x)
+    x_2 = MaxPooling2D(pool_size=2)(x_2)
+    x_2 = BatchNormalization()(x_2)
+    x = LeakyReLU()(x)
+    x = Add()([x_1, x_2])
+
+    x = Flatten()(x)
+    x = Dense(num_labels, activation='softmax')(x)
+
+    model = tf.keras.Model(inputs=input_data, outputs=x, name="Dilated_STFT")
+    return model
 
 # Construct model 
 model = Sequential()
-model.add(Conv2D(filters=16, kernel_size= (5,5), padding = 'same',input_shape=(num_rows, num_columns, num_channels)))
-model.add(LeakyReLU(alpha=leaky_relu_alpha))
+model = make_dilated_network(num_rows, num_columns, num_channels)
 
-model.add(Conv2D(filters=32, kernel_size=(3,3), padding = 'same'))
-model.add(LeakyReLU(alpha=leaky_relu_alpha))
-model.add(MaxPooling2D(pool_size=2))
-model.add(BatchNormalization())
-
-model.add(Conv2D(filters=64, kernel_size=(3,3), padding = 'same'))
-model.add(LeakyReLU(alpha=leaky_relu_alpha))
-model.add(MaxPooling2D(pool_size=2))
-model.add(BatchNormalization())
-
-
-model.add(Conv2D(filters=128, kernel_size=(3,3), padding = 'same'))
-model.add(LeakyReLU(alpha=leaky_relu_alpha))
-model.add(MaxPooling2D(pool_size=2))
-model.add(BatchNormalization())
-
-model.add(Flatten())
-
-model.add(Dense(num_labels, activation='softmax'))
-
+lr = tf.optimizers.schedules.ExponentialDecay(0.01, decay_steps=4498*50, decay_rate=0.95)
 
 # Display model architecture summary 
 model.summary()
 
+
 # Compile the model
-model.compile(loss='categorical_crossentropy', metrics=['categorical_accuracy'], optimizer='adam')
+model.compile(loss='categorical_crossentropy', metrics=['categorical_accuracy'], optimizer = tf.optimizers.Adam(lr))
 
 print(model)
 
@@ -291,9 +326,8 @@ accuracy = 100*score[1]
 
 print("Pre-training accuracy: %.4f%%" % accuracy)
 
-csv_logger = CSVLogger('log.csv', append=True, separator=';')
-
-cnnhistory=model.fit(x_train, y_train, batch_size=16, epochs=700, validation_data=(x_test, y_test),callbacks=[csv_logger])
+#callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss')
+history = model.fit(x_train, y_train, batch_size=16, epochs=300, validation_data=(x_test, y_test))
 
 
 # Evaluating the model on the training and testing set
@@ -304,13 +338,7 @@ score = model.evaluate(x_test, y_test, verbose=0)
 print("Testing Accuracy: ", score[1])
 
 
-
-
-
-
-
-
-
+#tf.keras.callbacks.EarlyStopping(patience=10, min_delta=0.05)
 
 
 
