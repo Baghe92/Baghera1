@@ -59,6 +59,7 @@ from tensorflow.keras.layers import LeakyReLU
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import optimizers
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers import RMSprop
 
 #from tensorflow.python.keras.applications.resnet import ResNet50
 from tensorflow.python.keras.models import Sequential
@@ -75,7 +76,7 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.utils import shuffle
 
 from sklearn.model_selection import train_test_split
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score
 from sklearn.neural_network import MLPClassifier
 
@@ -210,31 +211,34 @@ print(x.shape)
 y=labels.to_numpy().ravel()
 print('y.shape',y.shape)
 
+#x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20, random_state = 42)
 
-lb = LabelEncoder()
+skf = StratifiedKFold(n_splits = 10)
+skf.get_n_splits(x, y)
 
+print(skf)
 
-yy = to_categorical(lb.fit_transform(y))
+StratifiedKFold(n_splits = 10, random_state=None, shuffle=False)
 
-print('y_train',yy.shape)
-
-
-kf = KFold(n_splits = 10 , random_state = None, shuffle =False)
-
-kf.get_n_splits(x)
-
-print(kf)
-
-for train_index, test_index in kf.split(x):
+for train_index, test_index in skf.split(x, y):
 	print("TRAIN:", train_index, "TEST:", test_index)
 	x_train, x_test = x[train_index], x[test_index]     
-	y_train, y_test = yy[train_index],yy[test_index]
-
+	y_train, y_test = y[train_index], y[test_index]
 
 print('x_train', x_train.shape)
 print('x_test' , x_test.shape)
 print('y_train', y_train.shape)
 print('y_test' , y_test.shape)
+
+
+lb = LabelEncoder()
+
+y_train = to_categorical(lb.fit_transform(y_train))
+y_test = to_categorical(lb.fit_transform(y_test))
+
+
+print('y_train',y_train.shape)
+
 
 '''
 x_train[0].flatten()
@@ -246,11 +250,10 @@ print('x_traincnn',x_traincnn.shape)
 
 '''
 
+
 num_rows     = 257
 num_columns  = 251
 num_channels = 1
-
-
 
 leaky_relu_alpha = 0.1
 #filter_size = 2
@@ -261,62 +264,65 @@ x_test  = x_test.reshape(x_test.shape[0],num_rows,num_columns,num_channels)
 
 print('new_train',x_train.shape)
 
-num_labels = yy.shape[1]
+num_labels = y_train.shape[1]
 
 def make_dilated_network(num_rows, num_columns, num_channels):
     input_data = Input(shape=(num_rows, num_columns, num_channels))
-    x = Conv2D(filters=256, kernel_size=1)(input_data)
-    x = Conv2D(filters=256, kernel_size=5, padding = 'same')(x)
+    x = Conv2D(filters=32, kernel_size=5)(input_data)
+    x = Conv2D(filters=32, kernel_size=3, padding = 'same')(x)
     x = MaxPooling2D(pool_size=2)(x)
     x = BatchNormalization()(x)
     x = LeakyReLU()(x)
 
-    x_1 = Conv2D(filters=512, kernel_size=3, padding = 'same')(x)
+    x_1 = Conv2D(filters=64, kernel_size=3, padding = 'same')(x)
     x_1 = MaxPooling2D(pool_size=2)(x_1)
     x_1 = BatchNormalization()(x_1)
-    x_2 = Conv2D(filters=512, kernel_size=3, padding="same", dilation_rate=2)(x)
+    x_2 = Conv2D(filters=64, kernel_size=3, padding="same", dilation_rate=1)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
     x = LeakyReLU()(x)
     x = Add()([x_1, x_2])
 
-    x_1 = Conv2D(filters=256, kernel_size=3, padding = 'same')(x)
+    x_1 = Conv2D(filters=64, kernel_size=1, padding = 'same')(x)
     x_1 = MaxPooling2D(pool_size=2)(x_1)
     x_1 = BatchNormalization()(x_1)
-    x_2 = Conv2D(filters=256, kernel_size=3, padding="same", dilation_rate=2)(x)
+    x_2 = Conv2D(filters=64, kernel_size=3, padding="same", dilation_rate=1)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
     x = LeakyReLU()(x)
     x = Add()([x_1, x_2])
 
-    x_1 = Conv2D(filters=128, kernel_size=3, padding = 'same')(x)
+    x_1 = Conv2D(filters=128, kernel_size=1, padding = 'same')(x)
     x_1 = MaxPooling2D(pool_size=2)(x_1)
     x_1 = BatchNormalization()(x_1)
-    x_2 = Conv2D(filters=128, kernel_size=3, padding="same", dilation_rate=2)(x)
+    x_2 = Conv2D(filters=128, kernel_size=3, padding="same", dilation_rate=1)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
     x = LeakyReLU()(x)
     x = Add()([x_1, x_2])
 
     x = Flatten()(x)
+    
     x = Dense(num_labels, activation='softmax')(x)
 
     model = tf.keras.Model(inputs=input_data, outputs=x, name="Dilated_STFT")
     return model
 
+
 # Construct model 
 model = Sequential()
 model = make_dilated_network(num_rows, num_columns, num_channels)
-
-lr = tf.optimizers.schedules.ExponentialDecay(0.01, decay_steps=4498*50, decay_rate=0.95)
-
-# Display model architecture summary 
 model.summary()
 
-
+#lr = tf.optimizers.schedules.ExponentialDecay(0.001, decay_steps=4498*50, decay_rate=0.95)
 # Compile the model
-model.compile(loss='categorical_crossentropy', metrics=['categorical_accuracy'], optimizer = tf.optimizers.Adam(lr))
 
+# defining the parameters for RMSprop (I used the keras defaults here)
+rms = RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0)
+model.compile(loss='categorical_crossentropy', metrics=['categorical_accuracy'],optimizer=rms)
+
+
+# Display model architecture summary 
 print(model)
 
 
@@ -326,8 +332,9 @@ accuracy = 100*score[1]
 
 print("Pre-training accuracy: %.4f%%" % accuracy)
 
-#callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss')
-history = model.fit(x_train, y_train, batch_size=16, epochs=300, validation_data=(x_test, y_test))
+#callback = tf.keras.callbacks.EarlyStopping(verbose=1, patience=10,min_delta=0.05)
+csv_logger = CSVLogger('log.csv', append=True, separator=';')
+history = model.fit(x_train, y_train, batch_size=16, epochs=100, validation_data=(x_test,y_test),callbacks=[csv_logger])
 
 
 # Evaluating the model on the training and testing set
@@ -337,9 +344,19 @@ print("Training Accuracy: ", score[1])
 score = model.evaluate(x_test, y_test, verbose=0)
 print("Testing Accuracy: ", score[1])
 
+plt.plot(history.history['categorical_accuracy'], label='Train Accuracy')
+plt.plot(history.history['val_categorical_accuracy'], label='Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+
+plt.show()
+
 
 #tf.keras.callbacks.EarlyStopping(patience=10, min_delta=0.05)
 
+#score = model.evaluate(np.expand_dims(X, axis=3), y, batch_size=32)
+#print score
 
 
 
