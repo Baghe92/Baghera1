@@ -268,8 +268,8 @@ num_labels = y_train.shape[1]
 
 def make_dilated_network(num_rows, num_columns, num_channels):
     input_data = Input(shape=(num_rows, num_columns, num_channels))
-    x = Conv2D(filters=32, kernel_size=5)(input_data)
-    x = Conv2D(filters=32, kernel_size=3, padding = 'same')(x)
+    x = Conv2D(filters=32, kernel_size=1)(input_data)
+    x = Conv2D(filters=32, kernel_size=5, padding = 'same')(x)
     x = MaxPooling2D(pool_size=2)(x)
     x = BatchNormalization()(x)
     x = LeakyReLU()(x)
@@ -280,26 +280,26 @@ def make_dilated_network(num_rows, num_columns, num_channels):
     x_2 = Conv2D(filters=64, kernel_size=3, padding="same", dilation_rate=1)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
-    x = LeakyReLU()(x)
     x = Add()([x_1, x_2])
+    x = LeakyReLU()(x)
 
-    x_1 = Conv2D(filters=64, kernel_size=1, padding = 'same')(x)
+    x_1 = Conv2D(filters=64, kernel_size=3, padding = 'same')(x)
     x_1 = MaxPooling2D(pool_size=2)(x_1)
     x_1 = BatchNormalization()(x_1)
     x_2 = Conv2D(filters=64, kernel_size=3, padding="same", dilation_rate=1)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
-    x = LeakyReLU()(x)
     x = Add()([x_1, x_2])
+    x = LeakyReLU()(x)
 
-    x_1 = Conv2D(filters=128, kernel_size=1, padding = 'same')(x)
+    x_1 = Conv2D(filters=16, kernel_size=3, padding = 'same')(x)
     x_1 = MaxPooling2D(pool_size=2)(x_1)
     x_1 = BatchNormalization()(x_1)
-    x_2 = Conv2D(filters=128, kernel_size=3, padding="same", dilation_rate=1)(x)
+    x_2 = Conv2D(filters=16, kernel_size=3, padding="same", dilation_rate=1)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
-    x = LeakyReLU()(x)
     x = Add()([x_1, x_2])
+    x = LeakyReLU()(x)
 
     x = Flatten()(x)
     
@@ -357,6 +357,23 @@ plt.show()
 
 #score = model.evaluate(np.expand_dims(X, axis=3), y, batch_size=32)
 #print score
+
+target_names=['female_calm','male_calm','female_happy','male_happy','female_sad','male_sad','female_angry','male_angry','female_fearful','male_fearful']
+
+y_pred = model.predict(x_test)
+
+print('y_pred',y_pred)
+print('y_pred.shape',y_pred.shape)
+
+y_true = np.argmax(test_y, axis=1)
+y_pred_classes = np.argmax(y_pred, axis=1)
+
+test_acc = sum(y_pred == y_true) / len(y_true)
+print('Test set accuracy:',test_acc)
+
+confusion_mtx = confusion_matrix(Y_true, Y_pred_classes)
+
+
 
 
 
