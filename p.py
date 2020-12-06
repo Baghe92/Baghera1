@@ -18,6 +18,11 @@ import librosa.display
 import numpy as np
 
 import matplotlib.pyplot as plt, IPython.display as ipd
+import matplotlib as mpl
+import itertools
+from itertools import cycle
+import cv2
+
 
 import tensorflow as tf
 
@@ -25,6 +30,7 @@ import os
 import pandas as pd
 import glob 
 import scipy.io.wavfile
+from scipy import interp
 import sys
 import json
 import random
@@ -32,18 +38,22 @@ import random
 import soundfile
 import pickle
 import tqdm
+import seaborn as sns
 
 
 from tensorflow import keras
 
 from matplotlib.pyplot import specgram
+from matplotlib import cm
 from tensorflow.keras.preprocessing import sequence
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.models import model_from_json
 from tensorflow.keras.layers import LSTM
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.utils import to_categorical
+from sklearn.preprocessing import StandardScaler
 from tensorflow.keras import Input
 from tensorflow.keras import layers
 from tensorflow.keras import models
@@ -56,6 +66,7 @@ from tensorflow.keras.layers import Concatenate
 from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, BatchNormalization, MaxPooling2D,GlobalAveragePooling2D,Input
 from tensorflow.keras.layers import AveragePooling2D
 from tensorflow.keras.layers import LeakyReLU
+from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import optimizers
 from tensorflow.keras.optimizers import Adam
@@ -69,6 +80,9 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.callbacks import CSVLogger
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import plot_confusion_matrix
+
+from sklearn.metrics import classification_report
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -79,11 +93,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score
 from sklearn.neural_network import MLPClassifier
+from itertools import cycle
 
 from datetime import datetime
-
-
-
 
 mylist= os.listdir('RawData/')
 
@@ -225,6 +237,7 @@ for train_index, test_index in skf.split(x, y):
 	x_train, x_test = x[train_index], x[test_index]     
 	y_train, y_test = y[train_index], y[test_index]
 
+
 print('x_train', x_train.shape)
 print('x_test' , x_test.shape)
 print('y_train', y_train.shape)
@@ -236,20 +249,7 @@ lb = LabelEncoder()
 y_train = to_categorical(lb.fit_transform(y_train))
 y_test = to_categorical(lb.fit_transform(y_test))
 
-
 print('y_train',y_train.shape)
-
-
-'''
-x_train[0].flatten()
-
-x_traincnn =np.expand_dims(x_train, axis=2)
-x_testcnn= np.expand_dims(x_test, axis=2)
-
-print('x_traincnn',x_traincnn.shape)
-
-'''
-
 
 num_rows     = 257
 num_columns  = 251
@@ -268,59 +268,54 @@ num_labels = y_train.shape[1]
 
 def make_dilated_network(num_rows, num_columns, num_channels):
     input_data = Input(shape=(num_rows, num_columns, num_channels))
-    x = Conv2D(filters=32, kernel_size=1)(input_data)
-    x = Conv2D(filters=32, kernel_size=5, padding = 'same')(x)
+    x = Conv2D(filters=8, kernel_size=7)(input_data)
+    x = Conv2D(filters=16, kernel_size=5, padding = 'same')(x)
     x = MaxPooling2D(pool_size=2)(x)
     x = BatchNormalization()(x)
     x = LeakyReLU()(x)
 
-    x_1 = Conv2D(filters=64, kernel_size=3, padding = 'same')(x)
+    x_1 = Conv2D(filters=32, kernel_size=5, padding = 'same')(x)
     x_1 = MaxPooling2D(pool_size=2)(x_1)
     x_1 = BatchNormalization()(x_1)
-    x_2 = Conv2D(filters=64, kernel_size=3, padding="same", dilation_rate=1)(x)
+    x_2 = Conv2D(filters=32, kernel_size=5, padding="same", dilation_rate=2)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
     x = Add()([x_1, x_2])
     x = LeakyReLU()(x)
 
-    x_1 = Conv2D(filters=64, kernel_size=3, padding = 'same')(x)
+    x_1 = Conv2D(filters=64, kernel_size=5, padding = 'same')(x)
     x_1 = MaxPooling2D(pool_size=2)(x_1)
     x_1 = BatchNormalization()(x_1)
-    x_2 = Conv2D(filters=64, kernel_size=3, padding="same", dilation_rate=1)(x)
+    x_2 = Conv2D(filters=64, kernel_size=5, padding="same", dilation_rate=2)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
     x = Add()([x_1, x_2])
     x = LeakyReLU()(x)
-
-    x_1 = Conv2D(filters=16, kernel_size=3, padding = 'same')(x)
+    
+    x_1 = Conv2D(filters=64, kernel_size=5, padding = 'same')(x)
     x_1 = MaxPooling2D(pool_size=2)(x_1)
     x_1 = BatchNormalization()(x_1)
-    x_2 = Conv2D(filters=16, kernel_size=3, padding="same", dilation_rate=1)(x)
+    x_2 = Conv2D(filters=64, kernel_size=5, padding="same", dilation_rate=2)(x)
     x_2 = MaxPooling2D(pool_size=2)(x_2)
     x_2 = BatchNormalization()(x_2)
     x = Add()([x_1, x_2])
     x = LeakyReLU()(x)
 
     x = Flatten()(x)
-    
     x = Dense(num_labels, activation='softmax')(x)
 
     model = tf.keras.Model(inputs=input_data, outputs=x, name="Dilated_STFT")
     return model
 
-
 # Construct model 
 model = Sequential()
 model = make_dilated_network(num_rows, num_columns, num_channels)
+
+rms = RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0)
 model.summary()
 
-#lr = tf.optimizers.schedules.ExponentialDecay(0.001, decay_steps=4498*50, decay_rate=0.95)
-# Compile the model
-
 # defining the parameters for RMSprop (I used the keras defaults here)
-rms = RMSprop(lr=0.001, rho=0.9, epsilon=None, decay=0.0)
 model.compile(loss='categorical_crossentropy', metrics=['categorical_accuracy'],optimizer=rms)
-
 
 # Display model architecture summary 
 print(model)
@@ -334,29 +329,40 @@ print("Pre-training accuracy: %.4f%%" % accuracy)
 
 #callback = tf.keras.callbacks.EarlyStopping(verbose=1, patience=10,min_delta=0.05)
 csv_logger = CSVLogger('log.csv', append=True, separator=';')
-history = model.fit(x_train, y_train, batch_size=16, epochs=100, validation_data=(x_test,y_test),callbacks=[csv_logger])
+history = model.fit(x_train, y_train, batch_size=16, epochs=200, validation_data=(x_test,y_test),callbacks=[csv_logger])
 
 
 # Evaluating the model on the training and testing set
 score = model.evaluate(x_train, y_train, verbose=0)
 print("Training Accuracy: ", score[1])
 
-score = model.evaluate(x_test, y_test, verbose=0)
-print("Testing Accuracy: ", score[1])
+score2 = model.evaluate(x_test, y_test, verbose=0)
+print("Testing Accuracy: ", score2[1])
 
-plt.plot(history.history['categorical_accuracy'], label='Train Accuracy')
-plt.plot(history.history['val_categorical_accuracy'], label='Validation Accuracy')
-plt.xlabel('Epochs')
-plt.ylabel('Accuracy')
+
+accuracy       =  history.history['categorical_accuracy']
+val_accuracy   =  history.history['val_categorical_accuracy']
+
+loss           =  history.history['loss']
+val_loss       =  history.history['val_loss']
+
+epochs = range(1, len(accuracy) + 1)
+
+plt.plot(epochs, accuracy, 'bo', label='Training accuracy')
+plt.plot(epochs, val_accuracy, 'b', label='Validation accuracy')
+plt.title('CNN Accuracy')
 plt.legend()
+plt.savefig('CNN Accuracy')
 
+plt.figure()
+
+plt.plot(epochs, loss, 'bo', label='Training loss')
+plt.plot(epochs, val_loss, 'b', label='Validation loss')
+plt.title('CNN Loss')
+plt.legend()
+plt.savefig('CNN Loss')
 plt.show()
 
-
-#tf.keras.callbacks.EarlyStopping(patience=10, min_delta=0.05)
-
-#score = model.evaluate(np.expand_dims(X, axis=3), y, batch_size=32)
-#print score
 
 target_names=['female_calm','male_calm','female_happy','male_happy','female_sad','male_sad','female_angry','male_angry','female_fearful','male_fearful']
 
@@ -365,15 +371,71 @@ y_pred = model.predict(x_test)
 print('y_pred',y_pred)
 print('y_pred.shape',y_pred.shape)
 
-y_true = np.argmax(test_y, axis=1)
+y_true = np.argmax(y_test, axis=1)
+
 y_pred_classes = np.argmax(y_pred, axis=1)
 
-test_acc = sum(y_pred == y_true) / len(y_true)
-print('Test set accuracy:',test_acc)
 
-confusion_mtx = confusion_matrix(Y_true, Y_pred_classes)
+#y_pred_classes = np.argmax(y_pred, axis=1)
+
+#print(classification_report(y_true, y_pred, target_names=target_names))
+
+print('\n', classification_report(np.where(y_test > 0)[1], np.argmax(y_pred, axis=1),
+                                  target_names=target_names))
+
+'''
+print(data = confusion_matrix(y_true, y_pred))
+
+# Plot non-normalized confusion matrix
+
+df_cm = pd.DataFrame(data, columns=np.unique(target_names), index = np.unique(target_names))
+df_cm.index.name = 'Actual'
+df_cm.columns.name = 'Predicted'
+plt.figure(figsize = (10,7))
+sn.set(font_scale=1.4)#for label size
+sn.heatmap(df_cm, cmap="Blues", annot=True,annot_kws={"size": 16})
+
+plt.savefig("confusion_matrix.png")
+plt.show()
+'''
+def plot_confusion_matrix(cm, classes,
+                          normalize=False,
+                          title='Confusion matrix',
+                          cmap=plt.cm.Blues):
+    plt.figure(10)
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    print(cm)
+
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, cm[i, j],
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    y = np.repeat(np.arange(0, 10), 75)
+    plt.xlim(-0.5, len(np.unique(y)) - 0.5)  # ADD THIS LINE
+    plt.ylim(len(np.unique(y)) - 0.5, -0.5)  # ADD THIS LINE
+    plt.savefig("confusion_matrix_big.png")
+
+cm = confusion_matrix(y_true, y_pred_classes)
+
+plot_confusion_matrix(cm, classes=target_names)
 
 
+print("Training Accuracy: ", score[1])
 
-
+print("Testing Accuracy: ", score2[1])
 
