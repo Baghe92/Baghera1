@@ -119,14 +119,12 @@ for index,y in enumerate(mylist):
              
            #if S.shape != (257, 251):
              #  continue
-           for i in range(0,6):
+           for i in range(0,9):
                (X, coeff_d) = pywt.dwt(X, 'haar')
                array = X
            
-           if array.shape == (1679,) or array.shape == (1690,) or array.shape == (1654,) or array.shape == (1672,):   
-              
-           #{(1679,), (1690,), (1723,), (1654,), (1672,)}
-           
+           if array.shape == (207,) or array.shape == (209,) or array.shape == (210,) or array.shape == (212,):   
+             
                continue
            feature = array
            df.loc[bookmark] = [feature]
@@ -230,7 +228,7 @@ leaky_relu_alpha = 0.1
 
 # Construct model 
 model = Sequential()
-model.add(Conv1D(32, kernel_size = 5, activation='relu', input_shape=(1723,1)))
+model.add(Conv1D(32, kernel_size = 5, activation='relu', input_shape=(216,1)))
 model.add(BatchNormalization())
 model.add(MaxPooling1D(pool_size = 2))
 
@@ -269,7 +267,6 @@ print('Train loss: {}, Train accuracy: {}'.format(train_score[0], train_score[1]
 
 test_score = model.evaluate(x_testcnn, y_test, verbose=0)
 print('Test loss: {}, Test accuracy: {}'.format(test_score[0], test_score[1]))
-
 
 
 
